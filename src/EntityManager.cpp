@@ -1,4 +1,5 @@
 #include "EntityManager.h"
+#include <iostream>
 
 EntityManager::EntityManager()
 {
@@ -6,7 +7,7 @@ EntityManager::EntityManager()
 }
 
 void EntityManager::update() {
-  for(auto e : m_entitiesToAdd) 
+  for (auto e : m_entitiesToAdd)
   {
     m_entities.push_back(e);
     m_entityMap[e->tag()].push_back(e);
@@ -23,13 +24,19 @@ void EntityManager::update() {
 
 void EntityManager::removeDeadEntities(EntityVec& vec)
 {
-  for (auto e : vec)
-  {
-    if(!e->isActive())
-    {
-      // std::remove_if();
+  // for (auto e : vec)
+  // {
+  //   if(!e->isActive())
+  //   {
+  //     // std::remove_if();
+  //   }
+  // }
+  auto iterator = std::remove_if(vec.begin(), vec.end(), [](std::shared_ptr<Entity> e) {
+    if (!e->isActive()) {
     }
-  }
+    return !e->isActive();
+    });
+  vec.erase(iterator, vec.end());
 }
 
 std::shared_ptr<Entity> EntityManager::addEntity(const std::string& tag)

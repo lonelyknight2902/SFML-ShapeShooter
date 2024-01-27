@@ -71,7 +71,9 @@ void Game::init(const std::string& path)
     exit(-1);
   }
 
-  m_text = sf::Text("Score: 0", m_font, fontSize);
+  m_text.setFont(m_font);
+  m_text.setCharacterSize(fontSize);
+  m_text.setPosition(0, (float)m_text.getCharacterSize());
   spawnPlayer();
 }
 
@@ -80,16 +82,23 @@ void Game::run()
   // TODO: Add pause functionality in here
   while (m_running)
   {
+    std::cout << "Update" << "\n";
     m_entities.update();
+    std::cout << "Render" << "\n";
+    sRender();
+    std::cout << "User input" << "\n";
+    sUserInput();
     if (!m_paused)
     {
+      std::cout << "Enemy Spawned" << "\n";
       sEnemySpawner();
+      std::cout << "Movement" << "\n";
       sMovement();
+      std::cout << "Collision" << "\n";
       sCollision();
-      sUserInput();
+      std::cout << "Lifespan" << "\n";
+      sLifespan();
     }
-
-    sRender();
 
     m_currentFrame++;
   }
@@ -120,8 +129,19 @@ void Game::spawnEnemy()
   auto entity = m_entities.addEntity("enemy");
   float ex = rand() % m_window.getSize().x;
   float ey = rand() % m_window.getSize().y;
-  entity->cTransform = std::make_shared<CTransform>(Vec2(ex, ey), Vec2(1.0f, 1.0f), 0.0f);
-  entity->cShape = std::make_shared<CShape>(16.0f, 3, sf::Color(0, 0, 255), sf::Color(255, 255, 255), 4.0f);
+  int red = rand() % 256;
+  int green = rand() % 256;
+  int blue = rand() % 256;
+  int vertices = m_enemyConfig.VMIN + rand() % (m_enemyConfig.VMAX - m_enemyConfig.VMIN + 1);
+  float speed = m_enemyConfig.SMIN + ((float)rand() / (RAND_MAX / (m_enemyConfig.SMAX - m_enemyConfig.SMIN)));
+  float vx = (float)rand() / RAND_MAX;
+  float vy = (float)rand() / RAND_MAX;
+  Vec2 velocity = { vx, vy };
+  velocity.normalize();
+  velocity *= speed;
+  entity->cTransform = std::make_shared<CTransform>(Vec2(ex, ey), velocity, 0.0f);
+  entity->cShape = std::make_shared<CShape>(m_enemyConfig.SR, vertices, sf::Color(red, green, blue), sf::Color(m_enemyConfig.OR, m_enemyConfig.OG, m_enemyConfig.OB), m_enemyConfig.OT);
+  entity->cScore = std::make_shared<CScore>(vertices * 100);
   m_lastEnemySpawnTime = m_currentFrame;
 }
 
@@ -133,8 +153,14 @@ void Game::spawnSmallEnemies(std::shared_ptr<Entity> e)
 void Game::spawnBullet(std::shared_ptr<Entity> entity, const Vec2& target)
 {
   auto bullet = m_entities.addEntity("bullet");
-  bullet->cTransform = std::make_shared<CTransform>(target, Vec2(0, 0), 0);
-  bullet->cShape = std::make_shared<CShape>(10, 8, sf::Color(255, 255, 255), sf::Color(255, 0, 0), 2);
+  Vec2 velocity = target - entity->cTransform->pos;
+  velocity.normalize();
+  velocity *= m_bulletConfig.S;
+  std::cout << "Speed " << velocity.x << " " << velocity.y << "\n";
+  bullet->cTransform = std::make_shared<CTransform>(entity->cTransform->pos, velocity, 0);
+  bullet->cShape = std::make_shared<CShape>(m_bulletConfig.SR, m_bulletConfig.V, sf::Color(m_bulletConfig.FR, m_bulletConfig.FG, m_bulletConfig.FB), sf::Color(m_bulletConfig.OR, m_bulletConfig.OG, m_bulletConfig.OB), m_bulletConfig.OT);
+  bullet->cLifespan = std::make_shared<CLifespan>(m_bulletConfig.L);
+  // std::cout << bullet->cLifespan->remaining << "\n";
 }
 
 void Game::spawnSpecialWeapon(std::shared_ptr<Entity> entity)
@@ -146,19 +172,19 @@ void Game::sMovement()
 {
   m_player->cTransform->velocity = { 0, 0 };
 
-  if (m_player->cInput->up)
+  if (m_player->cInput->up && m_player->cTransform->pos.y > m_playerConfig.CR)
   {
     m_player->cTransform->velocity.y = -1;
   }
-  if (m_player->cInput->down)
+  if (m_player->cInput->down && m_player->cTransform->pos.y < m_window.getSize().y - m_playerConfig.CR)
   {
     m_player->cTransform->velocity.y = 1;
   }
-  if (m_player->cInput->left)
+  if (m_player->cInput->left && m_player->cTransform->pos.x > m_playerConfig.CR)
   {
     m_player->cTransform->velocity.x = -1;
   }
-  if (m_player->cInput->right)
+  if (m_player->cInput->right && m_player->cTransform->pos.x < m_window.getSize().x - m_playerConfig.CR)
   {
     m_player->cTransform->velocity.x = 1;
   }
@@ -166,15 +192,39 @@ void Game::sMovement()
   m_player->cTransform->velocity.normalize();
   m_player->cTransform->velocity *= m_playerConfig.S;
 
-  std::cout << m_player->cTransform->velocity.x << " " << m_player->cTransform->velocity.y << "\n";
+  // m_player->cTransform->pos.x += m_player->cTransform->velocity.x;
+  // m_player->cTransform->pos.y += m_player->cTransform->velocity.y;
+  for (auto& e : m_entities.getEntities()) {
+    if (e->cTransform) {
+      if (e->tag() == "enemy") {
+        if (e->cTransform->pos.y <= m_enemyConfig.CR || e->cTransform->pos.y >= m_window.getSize().y - m_enemyConfig.CR) {
+          e->cTransform->velocity.y *= -1;
+        }
 
-  m_player->cTransform->pos.x += m_player->cTransform->velocity.x;
-  m_player->cTransform->pos.y += m_player->cTransform->velocity.y;
+        if (e->cTransform->pos.x <= m_enemyConfig.CR || e->cTransform->pos.x >= m_window.getSize().x - m_enemyConfig.CR) {
+          e->cTransform->velocity.x *= -1;
+        }
+      }
+      e->cTransform->pos.x += e->cTransform->velocity.x;
+      e->cTransform->pos.y += e->cTransform->velocity.y;
+    }
+  }
 }
 
 void Game::sLifespan()
 {
-
+  for (auto& e : m_entities.getEntities()) {
+    if (e->cLifespan) {
+      if (e->cLifespan->remaining < 0) {
+        e->destroy();
+      }
+      else {
+        float alpha = (float)e->cLifespan->remaining / (float)e->cLifespan->total * 255.0f;
+        e->cShape->circle.setFillColor(sf::Color(m_bulletConfig.FR, m_bulletConfig.FG, m_bulletConfig.FB, alpha));
+        e->cLifespan->remaining--;
+      }
+    }
+  }
 }
 
 void Game::sCollision()
@@ -183,7 +233,12 @@ void Game::sCollision()
   {
     for (auto e : m_entities.getEntities("enemy"))
     {
-
+      float distance = (b->cTransform->pos - e->cTransform->pos).length();
+      if (distance < m_bulletConfig.CR + m_enemyConfig.CR) {
+        m_score += e->cScore->score;
+        e->destroy();
+        b->destroy();
+      }
     }
   }
 }
@@ -202,11 +257,12 @@ void Game::sRender()
   for (auto e : m_entities.getEntities())
   {
     e->cShape->circle.setPosition(e->cTransform->pos.x, e->cTransform->pos.y);
-
     e->cTransform->angle += 1.0f;
     e->cShape->circle.setRotation(e->cTransform->angle);
     m_window.draw(e->cShape->circle);
   }
+  m_text.setString("Score: " + std::to_string(m_score));
+  m_window.draw(m_text);
   m_window.display();
 }
 
@@ -239,6 +295,11 @@ void Game::sUserInput()
       case sf::Keyboard::D:
         std::cout << "D Key Pressed\n";
         m_player->cInput->right = true;
+        break;
+      case sf::Keyboard::P:
+        std::cout << "P Key Pressed\n";
+        if (!m_paused) setPaused(true);
+        else setPaused(false);
         break;
       default:
         break;
